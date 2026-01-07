@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<ruleset>
+	<rule ref="vendor/humanmade/coding-standards">
+		<exclude name="HM.Classes.OnlyClassInFile.FoundMultipleDeclarations" />
+		<exclude name="PSR1.Classes.ClassDeclaration.MissingNamespace" />
+		<exclude name="WordPress.Files.FileName.InvalidClassFileName" />
+		<exclude name="HM.Functions.NamespacedFunctions.MissingNamespace" />
+		<exclude name="PSR1.Files.SideEffects.FoundWithSymbols" />
+	</rule>
+
+</ruleset>
