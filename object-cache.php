@@ -32,6 +32,17 @@ class Afterburner_Object_Cache {
 	public $cache = [];
 
 	/**
+	 * Cache of keys that have been looked up but not found in Redis.
+	 *
+	 * This prevents the issue where a not-found key cached as `false` in $this->cache
+	 * would be indistinguishable from a key that legitimately has the value `false`.
+	 * Uses keys as array keys for O(1) lookup performance.
+	 *
+	 * @var array<string,true>
+	 */
+	private $not_found_cache = [];
+
+	/**
 	 * The non-persistent groups.
 	 *
 	 * Non-persistent groups only store data in the local $this->cache array, and are not sent to Afterburner / Redis at all.
@@ -176,11 +187,13 @@ class Afterburner_Object_Cache {
 	public function add( string $key, mixed $data, string $group = 'default', int $expire = 0 ): bool {
 		$cache_key = $this->key( $key, $group );
 
+		// Only fail if the key actually exists in cache (not in not_found_cache).
 		if ( isset( $this->cache[ $cache_key ] ) ) {
 			return false;
 		}
 
 		$this->cache[ $cache_key ] = $data;
+		unset( $this->not_found_cache[ $cache_key ] );
 
 		// Skip Redis for non-persistent groups.
 		if ( in_array( $group, $this->non_persistent_groups, true ) ) {
@@ -191,6 +204,7 @@ class Afterburner_Object_Cache {
 			$result = $this->afterburner_redis_cache->add( $cache_key, $this->serialize( $data ), $expire ?: null );
 			if ( ! $result ) {
 				unset( $this->cache[ $cache_key ] );
+				return false;
 			}
 		} catch ( Exception $e ) {
 			unset( $this->cache[ $cache_key ] );
@@ -211,16 +225,20 @@ class Afterburner_Object_Cache {
 	public function get( string $key, string $group = 'default', $force = false, &$found = null ): mixed {
 		$cache_key = $this->key( $key, $group );
 
+		// Check not_found_cache first (unless forcing a fresh lookup).
+		if ( ! $force && isset( $this->not_found_cache[ $cache_key ] ) ) {
+			$found = false;
+			return false;
+		}
+
 		if ( ( ! $force || in_array( $group, $this->non_persistent_groups, true ) ) && isset( $this->cache[ $cache_key ] ) ) {
-			// Treat anything in the local cache as "found". It's possible though that this isn't "found" as a previous get call
-			// would populate this as "false". This is a known edge-case, because we don't want to query redis every time for
-			// not found keys.
 			$found = true;
 			return $this->cache[ $cache_key ];
 		}
 
 		// Skip Redis for non-persistent groups.
 		if ( in_array( $group, $this->non_persistent_groups, true ) ) {
+			$found = false;
 			return false;
 		}
 
@@ -228,9 +246,11 @@ class Afterburner_Object_Cache {
 			$value = $this->afterburner_redis_cache->get( $cache_key );
 			$unserialized = $this->unserialize( $value );
 			$this->cache[ $cache_key ] = $unserialized;
+			unset( $this->not_found_cache[ $cache_key ] );
 			$found = true;
 			return $unserialized;
 		} catch ( Exception $e ) {
+			$this->not_found_cache[ $cache_key ] = true;
 			$found = false;
 			return false;
 		}
@@ -249,6 +269,7 @@ class Afterburner_Object_Cache {
 		$cache_key = $this->key( $key, $group );
 
 		$this->cache[ $cache_key ] = $data;
+		unset( $this->not_found_cache[ $cache_key ] );
 
 		// Skip Redis for non-persistent groups.
 		if ( in_array( $group, $this->non_persistent_groups, true ) ) {
@@ -282,6 +303,7 @@ class Afterburner_Object_Cache {
 
 		try {
 			$this->afterburner_redis_cache->delete( $cache_key );
+			$this->not_found_cache[ $cache_key ] = true;
 		} catch ( Exception $e ) {
 			return false;
 		}
@@ -296,6 +318,7 @@ class Afterburner_Object_Cache {
 	 */
 	public function flush(): bool {
 		$this->cache = [];
+		$this->not_found_cache = [];
 
 		try {
 			$this->afterburner_redis_cache->flush();
@@ -313,6 +336,7 @@ class Afterburner_Object_Cache {
 	 */
 	public function flush_runtime(): bool {
 		$this->cache = [];
+		$this->not_found_cache = [];
 		try {
 			$this->afterburner_redis_cache->flush_runtime();
 		} catch ( Exception $e ) {
@@ -391,12 +415,14 @@ class Afterburner_Object_Cache {
 		$serialized_data = [];
 		foreach ( $key_map as $cache_key => $key ) {
 			$value = $data[ $key ];
+			// Only fail if the key actually exists in cache (not in not_found_cache).
 			if ( isset( $this->cache[ $cache_key ] ) ) {
 				$all_results[ $key ] = false;
 				continue;
 			}
 			$all_results[ $key ] = true;
 			$this->cache[ $cache_key ] = $value;
+			unset( $this->not_found_cache[ $cache_key ] );
 			$serialized_data[ $cache_key ] = $this->serialize( $value );
 		}
 
@@ -406,15 +432,17 @@ class Afterburner_Object_Cache {
 
 		try {
 			if ( empty( $serialized_data ) ) {
-				return [];
+				return $all_results;
 			}
+
 			$results = $this->afterburner_redis_cache->add_multiple( $serialized_data, $expire ?: null );
 			foreach ( $results as $cache_key => $redis_result ) {
 				$key = $key_map[ $cache_key ];
-				if ( ! $redis_result->error ) {
-					$this->cache[ $cache_key ] = $data[ $key ];
+				if ( $redis_result->error ) {
+					// Redis add failed, key exists in Redis - remove from local cache.
+					unset( $this->cache[ $cache_key ] );
+					$all_results[ $key ] = false;
 				}
-				$all_results[ $key ] = ! $redis_result->error;
 			}
 
 			return $all_results;
@@ -445,6 +473,9 @@ class Afterburner_Object_Cache {
 			foreach ( $key_map as $cache_key => $key ) {
 				if ( isset( $this->cache[ $cache_key ] ) ) {
 					$results[ $key ] = $this->cache[ $cache_key ];
+				} elseif ( isset( $this->not_found_cache[ $cache_key ] ) ) {
+					// Key was previously looked up and not found.
+					$results[ $key ] = false;
 				} else {
 					$need_to_get[] = $cache_key;
 				}
@@ -464,17 +495,18 @@ class Afterburner_Object_Cache {
 
 		if ( ! empty( $need_to_get ) ) {
 			try {
-
 				$redis_results = $this->afterburner_redis_cache->get_multiple( $need_to_get );
 				foreach ( $redis_results as $cache_key => $redis_value ) {
 					$key = $key_map[ $cache_key ];
 					if ( $redis_value->error ) {
-						$value = false;
+						$this->not_found_cache[ $cache_key ] = true;
+						$results[ $key ] = false;
 					} else {
 						$value = $this->unserialize( $redis_value->value );
+						$this->cache[ $cache_key ] = $value;
+						unset( $this->not_found_cache[ $cache_key ] );
+						$results[ $key ] = $value;
 					}
-					$this->cache[ $cache_key ] = $value;
-					$results[ $key ] = $value;
 				}
 			} catch ( Exception $e ) {
 				return false;
@@ -503,6 +535,7 @@ class Afterburner_Object_Cache {
 			foreach ( $data as $key => $value ) {
 				$cache_key = $this->key( $key, $group );
 				$this->cache[ $cache_key ] = $value;
+				unset( $this->not_found_cache[ $cache_key ] );
 			}
 			return array_fill_keys( array_keys( $data ), true );
 		}
@@ -522,6 +555,8 @@ class Afterburner_Object_Cache {
 					if ( $redis_result->error ) {
 						$all_results[ $key ] = false;
 					} else {
+						$this->cache[ $cache_key ] = $data[ $key ];
+						unset( $this->not_found_cache[ $cache_key ] );
 						$all_results[ $key ] = true;
 					}
 				}
@@ -563,6 +598,9 @@ class Afterburner_Object_Cache {
 			$results = $this->afterburner_redis_cache->delete_multiple( array_keys( $key_map ) );
 			foreach ( $results as $cache_key => $redis_result ) {
 				$key = $key_map[ $cache_key ];
+				if ( ! $redis_result->error ) {
+					$this->not_found_cache[ $cache_key ] = true;
+				}
 				$all_results[ $key ] = ! $redis_result->error;
 			}
 
