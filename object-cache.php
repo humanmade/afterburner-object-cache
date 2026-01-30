@@ -61,11 +61,25 @@ class Afterburner_Object_Cache {
 	private $global_groups = [];
 
 	/**
-	 * The blog prefix of the current sute.
+	 * The blog prefix of the current site.
 	 *
 	 * @var string
 	 */
 	private $blog_prefix = '0:';
+
+	/**
+	 * Number of cache hits.
+	 *
+	 * @var int
+	 */
+	public $cache_hits = 0;
+
+	/**
+	 * Number of cache misses.
+	 *
+	 * @var int
+	 */
+	public $cache_misses = 0;
 
 	/**
 	 * Create the class with a redis server configuration.
@@ -227,17 +241,20 @@ class Afterburner_Object_Cache {
 
 		// Check not_found_cache first (unless forcing a fresh lookup).
 		if ( ! $force && isset( $this->not_found_cache[ $cache_key ] ) ) {
+			$this->cache_hits++;
 			$found = false;
 			return false;
 		}
 
 		if ( ( ! $force || in_array( $group, $this->non_persistent_groups, true ) ) && isset( $this->cache[ $cache_key ] ) ) {
+			$this->cache_hits++;
 			$found = true;
 			return $this->cache[ $cache_key ];
 		}
 
 		// Skip Redis for non-persistent groups.
 		if ( in_array( $group, $this->non_persistent_groups, true ) ) {
+			$this->cache_misses++;
 			$found = false;
 			return false;
 		}
@@ -247,10 +264,12 @@ class Afterburner_Object_Cache {
 			$unserialized = $this->unserialize( $value );
 			$this->cache[ $cache_key ] = $unserialized;
 			unset( $this->not_found_cache[ $cache_key ] );
+			$this->cache_misses++;
 			$found = true;
 			return $unserialized;
 		} catch ( Exception $e ) {
 			$this->not_found_cache[ $cache_key ] = true;
+			$this->cache_misses++;
 			$found = false;
 			return false;
 		}
@@ -472,9 +491,11 @@ class Afterburner_Object_Cache {
 		if ( ! $force ) {
 			foreach ( $key_map as $cache_key => $key ) {
 				if ( isset( $this->cache[ $cache_key ] ) ) {
+					$this->cache_hits++;
 					$results[ $key ] = $this->cache[ $cache_key ];
 				} elseif ( isset( $this->not_found_cache[ $cache_key ] ) ) {
 					// Key was previously looked up and not found.
+					$this->cache_hits++;
 					$results[ $key ] = false;
 				} else {
 					$need_to_get[] = $cache_key;
@@ -488,6 +509,7 @@ class Afterburner_Object_Cache {
 			// Append all the non-set keys as false.
 			foreach ( $need_to_get as $cache_key ) {
 				$key = $key_map[ $cache_key ];
+				$this->cache_misses++;
 				$results[ $key ] = false;
 			}
 			return $results;
@@ -498,6 +520,7 @@ class Afterburner_Object_Cache {
 				$redis_results = $this->afterburner_redis_cache->get_multiple( $need_to_get );
 				foreach ( $redis_results as $cache_key => $redis_value ) {
 					$key = $key_map[ $cache_key ];
+					$this->cache_misses++;
 					if ( $redis_value->error ) {
 						$this->not_found_cache[ $cache_key ] = true;
 						$results[ $key ] = false;
