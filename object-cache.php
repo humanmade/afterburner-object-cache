@@ -659,7 +659,8 @@ function wp_cache_init(): bool {
 	}
 
 	if ( ini_get( 'afterburner.redis_skip_server_check' ) && ! isset( $redis_server['afterburner.redis_skip_server_check'] ) ) {
-		$redis_server['afterburner.redis_skip_server_check'] = true;
+		// Ini value can be "yes" / "no" which we need to interpret properly as boolean.
+		$redis_server['afterburner.redis_skip_server_check'] = filter_var( ini_get( 'afterburner.redis_skip_server_check' ), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
 	}
 
 	if ( ini_get( 'afterburner.max_items_lru_cache' ) && ! isset( $redis_server['afterburner.max_items_lru_cache'] ) ) {
