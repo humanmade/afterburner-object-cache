@@ -664,7 +664,10 @@ function wp_cache_init(): bool {
 	}
 
 	if ( ini_get( 'afterburner.lru_cache_max_items' ) && ! isset( $redis_server['afterburner.lru_cache_max_items'] ) ) {
-		$redis_server['afterburner.lru_cache_max_items'] = ini_get( 'afterburner.lru_cache_max_items' );
+		$lru_cache_max_items = filter_var( ini_get( 'afterburner.lru_cache_max_items' ), FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE );
+		if ( null !== $lru_cache_max_items ) {
+			$redis_server['afterburner.lru_cache_max_items'] = $lru_cache_max_items;
+		}
 	}
 
 	try {
