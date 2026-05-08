@@ -131,7 +131,7 @@ class Afterburner_Object_Cache {
 	 */
 	public function add_global_groups( $groups ): void {
 		$groups = (array) $groups;
-		$this->global_groups = array_unique( array_merge( $this->non_persistent_groups, $groups ) );
+		$this->global_groups = array_unique( array_merge( $this->global_groups, $groups ) );
 	}
 
 	/**
