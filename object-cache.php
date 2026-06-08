@@ -215,11 +215,10 @@ class Afterburner_Object_Cache {
 		}
 
 		try {
-			$result = $this->afterburner_redis_cache->add( $cache_key, $this->serialize( $data ), $expire ?: null );
-			if ( ! $result ) {
-				unset( $this->cache[ $cache_key ] );
-				return false;
-			}
+			// Afterburner's add() returns null on success and throws on failure
+			// (e.g. the key already exists), so a thrown exception is the only
+			// failure signal.
+			$this->afterburner_redis_cache->add( $cache_key, $this->serialize( $data ), $expire ?: null );
 		} catch ( Exception $e ) {
 			unset( $this->cache[ $cache_key ] );
 			return false;
