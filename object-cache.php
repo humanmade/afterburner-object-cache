@@ -704,55 +704,55 @@ function wp_cache_add_non_persistent_groups( string|array $groups ): void {
 /**
  * Add data to the cache.
  *
- * @param string $key The cache key.
+ * @param string|int $key The cache key.
  * @param mixed $data The data to store.
  * @param string $group The cache group.
  * @param int $expire The expiration time in seconds.
  * @return bool True if the data was added, false otherwise.
  */
-function wp_cache_add( string $key, mixed $data, string $group = 'default', int $expire = 0 ): bool {
+function wp_cache_add( string|int $key, mixed $data, string $group = 'default', int $expire = 0 ): bool {
 	global $wp_object_cache;
-	return $wp_object_cache->add( $key, $data, $group, $expire );
+	return $wp_object_cache->add( (string) $key, $data, $group, $expire );
 }
 
 /**
  * Get data from the cache.
  *
- * @param string $key The cache key.
+ * @param string|int $key The cache key.
  * @param string $group The cache group.
  * @param bool $force Whether to force a lookup on Afterburner rather than using the local cache.
  * @param bool $found Whether the key was found, passed by reference.
  * @return mixed The data, or false if not found.
  */
-function wp_cache_get( string $key, string $group = 'default', $force = false, &$found = null ): mixed {
+function wp_cache_get( string|int $key, string $group = 'default', $force = false, &$found = null ): mixed {
 	global $wp_object_cache;
-	return $wp_object_cache->get( $key, $group, $force, $found );
+	return $wp_object_cache->get( (string) $key, $group, $force, $found );
 }
 
 /**
  * Set data in the cache.
  *
- * @param string $key The cache key.
+ * @param string|int $key The cache key.
  * @param mixed $data The data to store.
  * @param string $group The cache group.
  * @param int $expire The expiration time in seconds.
  * @return bool True if the data was set, false otherwise.
  */
-function wp_cache_set( string $key, mixed $data, string $group = 'default', int $expire = 0 ): bool {
+function wp_cache_set( string|int $key, mixed $data, string $group = 'default', int $expire = 0 ): bool {
 	global $wp_object_cache;
-	return $wp_object_cache->set( $key, $data, $group, $expire );
+	return $wp_object_cache->set( (string) $key, $data, $group, $expire );
 }
 
 /**
  * Delete data from the cache.
  *
- * @param string $key The cache key.
+ * @param string|int $key The cache key.
  * @param string $group The cache group.
  * @return bool True if the data was deleted, false otherwise.
  */
-function wp_cache_delete( string $key, string $group = 'default' ): bool {
+function wp_cache_delete( string|int $key, string $group = 'default' ): bool {
 	global $wp_object_cache;
-	return $wp_object_cache->delete( $key, $group );
+	return $wp_object_cache->delete( (string) $key, $group );
 }
 
 /**
@@ -778,27 +778,27 @@ function wp_cache_flush_runtime(): bool {
 /**
  * Increment a value in the cache.
  *
- * @param string $key The cache key.
+ * @param string|int $key The cache key.
  * @param int $offset The amount to increment by.
  * @param string $group The cache group.
  * @return int|false The new value, or false if the operation failed.
  */
-function wp_cache_incr( string $key, int $offset = 1, string $group = 'default' ): int|false {
+function wp_cache_incr( string|int $key, int $offset = 1, string $group = 'default' ): int|false {
 	global $wp_object_cache;
-	return $wp_object_cache->incr( $key, $offset, $group );
+	return $wp_object_cache->incr( (string) $key, $offset, $group );
 }
 
 /**
  * Decrement a value in the cache.
  *
- * @param string $key The cache key.
+ * @param string|int $key The cache key.
  * @param int $offset The amount to decrement by.
  * @param string $group The cache group.
  * @return int|false The new value, or false if the operation failed.
  */
-function wp_cache_decr( string $key, int $offset = 1, string $group = 'default' ): int|false {
+function wp_cache_decr( string|int $key, int $offset = 1, string $group = 'default' ): int|false {
 	global $wp_object_cache;
-	return $wp_object_cache->decr( $key, $offset, $group );
+	return $wp_object_cache->decr( (string) $key, $offset, $group );
 }
 
 /**
@@ -824,6 +824,7 @@ function wp_cache_add_multiple( array $data, string $group = 'default', int $exp
  */
 function wp_cache_get_multiple( array $keys, string $group = 'default', $force = false ): array|false {
 	global $wp_object_cache;
+	$keys = array_map( 'strval', $keys );
 	return $wp_object_cache->get_multiple( $keys, $group, $force );
 }
 
@@ -849,6 +850,7 @@ function wp_cache_set_multiple( array $data, string $group = 'default', int $exp
  */
 function wp_cache_delete_multiple( array $keys, string $group = 'default' ): array|false {
 	global $wp_object_cache;
+	$keys = array_map( 'strval', $keys );
 	return $wp_object_cache->delete_multiple( $keys, $group );
 }
 
